@@ -1,5 +1,3 @@
-**WRITEUP**
-
 Based on this analysis, consumer financial loss is heavily concentrated in high-value meat products, specifically Beef (Rump) and Pork, where 90th percentile losses reach ₱70.00 to ₱112.00 per transaction across all five markets (Figure 2). The 30-day post-calibration distributions show that calibration campaigns successfully pull scale errors back toward zero tolerance (Figure 3). However, the 14-day rolling tracking reveals that scale accuracy begins to drift again over time (Figure 1). Additionally, MKT_05 represents the highest overall operational risk, showing uncertified scale rates as high as 71.4% paired with notable positive median error percentages (Figure 2).
 
 To optimize city resources, the City of San Isidro should move away from broad, random inspections and adopt a risk-based intervention strategy. Priority should be given to immediate recalibration drives and citations for high-value meat stalls across all markets, alongside focused, recurring enforcement in MKT_05 to resolve persistent non-certification and scale drift issues.

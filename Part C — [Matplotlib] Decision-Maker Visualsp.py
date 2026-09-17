@@ -7,7 +7,7 @@ plt.style.use('seaborn-v0_8-whitegrid')
 
 # Figure 1: Drift Chart - 14-Day Rolling Under-Weigh Rate per Market
 daily_underweigh = linked.groupby(['date', 'market_id'])['error_pct'].apply(
-    lambda x: (x < -0.5).mean() * 100
+    lambda x: (x < 0.5).mean() * 100
 ).reset_index(name='underweigh_rate')
 
 daily_underweigh['rolling_underweigh_rate'] = daily_underweigh.groupby('market_id')['underweigh_rate'].transform(
