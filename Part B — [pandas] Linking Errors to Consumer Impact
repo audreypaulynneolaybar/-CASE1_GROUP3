@@ -93,3 +93,36 @@ summary = linked.groupby(["market_id", "commodity"]).agg(
         if x.notna().any() else np.nan
     )
 ).reset_index()
+
+summary["share_uncertified"] *= 100
+
+# DISPLAY RESULT
+print("\n========================== MARKET × COMMODITY SUMMARY ==============================")
+print("\n", summary.to_string(index=False))
+
+linked['error_tolerance_flag'] = (linked['error_pct'] < -0.5) | (linked['error_pct'] > 0.5)
+
+# Calculate daily under-weigh rate
+daily_underweigh = linked.groupby(['date', 'market_id'])['error_pct'].apply(
+    lambda x: (x < -0.5).mean() * 100
+).reset_index(name='underweigh_rate')
+
+# Set index to date
+daily_underweigh = daily_underweigh.sort_values("date").set_index("date")
+
+daily_underweigh['rolling_underweigh_rate'] = daily_underweigh.groupby('market_id')['underweigh_rate'].transform(
+    lambda x: x.rolling('14D', min_periods=1).mean()
+)
+
+# Annotate post-calibration drives (Assuming a drive occurs when the rolling underweigh rate drops significantly, e.g., > 15% overnight)
+daily_underweigh['calibration_annotation'] = np.where(
+    daily_underweigh.groupby('market_id')['rolling_underweigh_rate'].diff() < -15,
+    "Post-Calibration Drive Detected",
+    ""
+)
+
+# Reset index to bring date back as a column
+daily_underweigh = daily_underweigh.reset_index()
+
+print("\n======================== Daily Underweigh Rate with 14-day Rolling Average ========================")
+display(daily_underweigh.head())
