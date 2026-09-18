@@ -1,0 +1,95 @@
+import pandas as pd
+import numpy as np
+
+# Read datasets
+inspections = pd.read_csv("inspections.csv")
+sales = pd.read_csv("sales_samples.csv")
+prices = pd.read_csv("prices.csv")
+
+# Convert dates
+for df_temp in [inspections, sales, prices]:
+    df_temp["date"] = pd.to_datetime(df_temp["date"])
+
+# Transaction ID
+sales["transaction_id"] = range(len(sales))
+
+# CALCULATE SCALE ERROR
+inspections["error_g"] = inspections["reading_g (scale reading)"] - inspections["nominal_weight_g (test mass)"]
+inspections["error_pct"] = inspections["error_g"] / inspections["nominal_weight_g (test mass)"] * 100
+
+# MATCH SALES & PRICE
+sales = sales.sort_values(["date", "market_id", "commodity"]).reset_index(drop=True)
+prices = prices.sort_values(["date", "market_id", "commodity"]).reset_index(drop=True)
+
+sales = pd.merge_asof(
+    sales,
+    prices[["date", "market_id", "commodity", "avg_price_per_kg"]],
+    on="date",
+    by=["market_id", "commodity"],
+    direction="backward",
+    tolerance=pd.Timedelta(days=7)
+)
+
+# MATCH SALES & INSPECTIONS
+sales["week"] = sales["date"].dt.to_period("W")
+inspections["week"] = inspections["date"].dt.to_period("W")
+
+inspection_cols = ["stall_id", "week", "date", "scale_id", "error_g", "error_pct", "is_certified (Y/N)"]
+
+# Rename inspection date so there is no date-column conflict
+inspection_data = inspections[inspection_cols].rename(columns={"date": "inspection_date"})
+
+linked = sales.merge(inspection_data, on=["stall_id", "week"], how="left")
+
+# Choose the closest inspection within the same week
+linked["date_diff"] = (linked["date"] - linked["inspection_date"]).abs()
+
+linked = (linked.sort_values(["transaction_id", "date_diff"]).drop_duplicates("transaction_id", keep="first"))
+
+# Use previous inspection within 7 days if there is no same-week inspection
+missing = linked["inspection_date"].isna()
+
+fallback_sales = sales[
+    sales["transaction_id"].isin(
+        linked.loc[missing, "transaction_id"]
+    )
+].sort_values(["date", "stall_id"])
+
+fallback_inspections = inspections[
+    ["stall_id", "date", "scale_id", "error_g", "error_pct", "is_certified (Y/N)"]
+].rename(
+    columns={"date": "inspection_date"}
+).sort_values(["inspection_date", "stall_id"])
+
+fallback = pd.merge_asof(
+    fallback_sales,
+    fallback_inspections,
+    left_on="date",
+    right_on="inspection_date",
+    by="stall_id",
+    direction="backward",
+    tolerance=pd.Timedelta(days=7)
+)
+
+# Add date_diff to fallback so the columns align
+fallback["date_diff"] = (fallback["date"] - fallback["inspection_date"]).abs()
+
+# Keep successful same-week matches
+matched = linked[~missing].copy()
+
+# Combine same-week matches and fallback matches
+linked = pd.concat([matched, fallback], ignore_index=True)
+
+# EXPECTED LOSS PER TRANSACTION
+linked["loss_php"] = ((linked["label_weight_kg"] - linked["actual_weight_kg"]).clip(lower=0) * linked["avg_price_per_kg"])
+
+# MARKET × COMMODITY SUMMARY
+summary = linked.groupby(["market_id", "commodity"]).agg(
+    median_error_pct=("error_pct", "median"),
+    p90_loss_php=("loss_php", lambda x: x.quantile(0.90)),
+    share_uncertified=(
+        "is_certified (Y/N)",
+        lambda x: x.eq("N").sum() / x.notna().sum()
+        if x.notna().any() else np.nan
+    )
+).reset_index()
